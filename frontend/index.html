@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Decentralized Blog</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.6.1/web3.min.js"></script>
+  </head>
+  <body>
+    <h1>Decentralized Blog</h1>
+
+    <div id="account-info">
+      <button onclick="connectWallet()">Connect Wallet</button>
+      <p id="user-account">Not connected</p>
+    </div>
+
+    <div id="create-post">
+      <h2>Create a New Blog Post</h2>
+      <input type="text" id="post-title" placeholder="Post Title" /><br />
+      <textarea
+        id="post-content"
+        placeholder="Write your content here..."
+        rows="4"
+        cols="50"
+      ></textarea
+      ><br />
+      <button onclick="createPost()">Create Post</button>
+    </div>
+
+    <div id="view-posts">
+      <h2>Blog Posts</h2>
+      <ul id="posts-list"></ul>
+    </div>
+
+    <script>
+      let web3;
+      let contract;
+      let userAccount;
+      const contractAddress = "0x99b64226921456c47c4F21c78ED102765307d5Ce"; // Replace with your deployed contract address
+      const contractABI = [
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "postId",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "author",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "string",
+              name: "title",
+              type: "string",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "timestamp",
+              type: "uint256",
+            },
+          ],
+          name: "PostCreated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "postId",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "liker",
+              type: "address",
+            },
+          ],
+          name: "PostLiked",
+          type: "event",
+        },
+        {
+          inputs: [
+            {
+              internalType: "string",
+              name: "_title",
+              type: "string",
+            },
+            {
+              internalType: "string",
+              name: "_content",
+              type: "string",
+            },
+          ],
+          name: "createPost",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "getAllPosts",
+          outputs: [
+            {
+              components: [
+                {
+                  internalType: "address",
+                  name: "author",
+                  type: "address",
+                },
+                {
+                  internalType: "string",
+                  name: "title",
+                  type: "string",
+                },
+                {
+                  internalType: "string",
+                  name: "content",
+                  type: "string",
+                },
+                {
+                  internalType: "uint256",
+                  name: "timestamp",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "likes",
+                  type: "uint256",
+                },
+              ],
+              internalType: "struct DecentralizedBlog.Post[]",
+              name: "",
+              type: "tuple[]",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "_postId",
+              type: "uint256",
+            },
+          ],
+          name: "likePost",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          name: "postLikes",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          name: "posts",
+          outputs: [
+            {
+              internalType: "address",
+              name: "author",
+              type: "address",
+            },
+            {
+              internalType: "string",
+              name: "title",
+              type: "string",
+            },
+            {
+              internalType: "string",
+              name: "content",
+              type: "string",
+            },
+            {
+              internalType: "uint256",
+              name: "timestamp",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "likes",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+      ];
+
+      // Connect to the user's Ethereum wallet
+      async function connectWallet() {
+        if (window.ethereum) {
+          web3 = new Web3(window.ethereum);
+          try {
+            await window.ethereum.enable(); // Request wallet connection
+            userAccount = await web3.eth.getAccounts();
+            document.getElementById(
+              "user-account"
+            ).innerText = `Connected: ${userAccount[0]}`;
+            contract = new web3.eth.Contract(contractABI, contractAddress);
+            loadPosts(); // Load posts when connected
+          } catch (error) {
+            console.error("User denied account access");
+          }
+        } else {
+          alert("Please install MetaMask to use this feature");
+        }
+      }
+
+      // Create a new blog post
+      async function createPost() {
+        const title = document.getElementById("post-title").value;
+        const content = document.getElementById("post-content").value;
+        if (!title || !content) {
+          alert("Title and content cannot be empty.");
+          return;
+        }
+
+        try {
+          await contract.methods
+            .createPost(title, content)
+            .send({ from: userAccount[0] });
+          alert("Post created successfully!");
+          document.getElementById("post-title").value = ""; // Clear the input fields
+          document.getElementById("post-content").value = "";
+          loadPosts(); // Refresh the post list
+        } catch (error) {
+          console.error(error);
+          alert("Error creating post.");
+        }
+      }
+
+      // Load and display all blog posts
+      async function loadPosts() {
+        try {
+          const posts = await contract.methods.getAllPosts().call();
+          const postsList = document.getElementById("posts-list");
+          postsList.innerHTML = ""; // Clear previous posts
+          posts.forEach((post, index) => {
+            const listItem = document.createElement("li");
+            listItem.innerHTML = `
+                        <strong>${post.title}</strong> (By: ${post.author})<br>
+                        ${post.content}<br>
+                        Likes: ${
+                          post.likes
+                        } <button onclick="likePost(${index})">Like</button><br>
+                        <small>Posted at: ${new Date(
+                          post.timestamp * 1000
+                        ).toLocaleString()}</small><br><br>
+                    `;
+            postsList.appendChild(listItem);
+          });
+        } catch (error) {
+          console.error(error);
+          alert("Error loading posts.");
+        }
+      }
+
+      // Like a specific post
+      async function likePost(postId) {
+        try {
+          await contract.methods
+            .likePost(postId)
+            .send({ from: userAccount[0] });
+          alert("Post liked!");
+          loadPosts(); // Refresh the post list
+        } catch (error) {
+          console.error(error);
+          alert("Error liking post.");
+        }
+      }
+    </script>
+  </body>
+</html>
